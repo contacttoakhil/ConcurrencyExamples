@@ -1,0 +1,69 @@
+public class CompletableFuture<T> extends Object implements Future<T>, CompletionStage<T>
+
+CompletionStage: A stage of a possibly asynchronous computation, that performs an action or computes a value when another CompletionStage completes. A stage completes upon termination of its computation, but this may in turn trigger other dependent stages.
+
+CompletableFuture: A Future that may be explicitly completed (setting its value and status), and may be used as a CompletionStage, supporting dependent functions and actions that trigger upon its completion. When two or more threads attempt to complete,
+completeExceptionally, or cancel a CompletableFuture, only one of them succeeds.
+
+It implements CompletionStage with following policies:
+a) Actions supplied for dependent completions of non-async methods may be performed by the thread that completes the current CompletableFuture, or by any other caller of a completion method.
+b) All async methods without an explicit Executor argument are performed using the ForkJoinPool.commonPool() (unless it does not support a parallelism level of at least two, in which case, a new Thread is created to run each task). To simplify monitoring,
+debugging, and tracking, all generated asynchronous tasks are instances of the marker interface CompletableFuture.AsynchronousCompletionTask.
+c) All CompletionStage methods are implemented independently of other public methods, so the behavior of one method is not impacted by overrides of others in subclasses.
+
+It implements Future with following policies:
+a) Unlike FutureTask, this class has no direct control over the computation, cancellation is treated as just another form of exceptional completion. Method cancel has the same effect as completeExceptionally(new CancellationException()). Method
+isCompletedExceptionally() can be used to determine if a CompletableFuture completed in any exceptional fashion.
+b) In case of exceptional completion with a CompletionException, methods get() and get(long, TimeUnit) throw an ExecutionException with the same cause as held in the corresponding CompletionException. To simplify usage in most contexts, this class also
+defines methods join() and getNow(T) that instead throw the CompletionException directly in these cases.
+
+Common Methods
+a) supplyAsync(Supplier<U> supplier)
+b) supplyAsync(Supplier<U> supplier, Executor executor)
+c) thenAccept(Consumer<? super T> action)
+d) join() - Returns the result value when complete, or throws an (unchecked) exception if completed exceptionally. To better conform with the use of common functional forms, if a computation involved in the completion of this CompletableFuture threw an
+exception, this method throws an (unchecked) CompletionException with the underlying exception as its cause.
+e) isDone() : Returns true if completed in any fashion: normally, exceptionally, or via cancellation.
+
+
+The method supplyAsync(Supplier<U> supplier) returns a new CompletableFuture that is asynchronously completed by a task running in the ForkJoinPool.commonPool(). This thread pool (ForkJoinPool.commonPool()) is shared between all CompletableFutures, all
+parallel streams and all applications deployed on the same JVM (if you are unfortunate to still use application server with many deployed artifacts). This hard-coded, unconfigurable thread pool is completely outside of our control, hard to monitor and scale.
+
+The other variant allows us to pass our own executor as well and should be preferred.
+-------------------------------------------------------------
+ExecutorService pool = Executors.newFixedThreadPool(10);
+
+final CompletableFuture<String> future =
+        CompletableFuture.supplyAsync(() -> {
+            //...
+        }, pool);
+-------------------------------------------------------------
+
+How to interrupt underlying computation of CompletableFuture?
+A CompletableFuture is not related to the asynchronous action that may eventually complete it. As mentioned unlike FutureTask it has no control over the computation. There may not even be a separate thread working on completing it (there may even be many
+threads working on it). Even if there is, there's no link from a CompletableFuture to any thread that has a reference to it.
+
+Is it possible that exiting main thread kill async tasks? -- http://stackoverflow.com/questions/43816328/will-the-main-thread-exiting-kill-the-async-task/43816432#43816432
+---------------------------------------------------------------------------
+CompletableFuture cf = CompletableFuture.supplyAsync(() -> task.call());
+cf.thenRunAsync(() -> {
+            try {
+                System.out.println(Thread.currentThread());
+                System.out.println((Double)cf.get() * 4.0);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+        });
+---------------------------------------------------------------------------
+We expect that asyn will run as a separate thread and main thread exit should not cause the process exit but it will not be the case. The reason is we are not passing any executor hence ForkJoinPool.commonPool() will be used. We also know that ForkJoinPool
+uses threads in daemon mode hence exiting main thread will kill those daemon threads (async tasks) too.
+
+
+
+References:
+https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/CompletableFuture.html
+http://www.nurkiewicz.com/2015/11/which-thread-executes.html
+http://stackoverflow.com/questions/29013831/how-to-interrupt-underlying-execution-of-completablefuture
+http://stackoverflow.com/questions/30857778/when-is-completablefuture-actually-completed

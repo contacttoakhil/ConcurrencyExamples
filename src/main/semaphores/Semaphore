@@ -1,0 +1,7 @@
+A Semaphore gives you a thread-safe counter that blocks when the acquire has been called beyond the initial limit. release can be used to undo an acquire.
+
+It will guarantee that if a call to acquire succeeds there is sufficient capacity to hold the new item.
+
+In the sample there are loops that look for a free item. Using a Semaphore ensures that none of those loops are begun until there is a free item.
+
+synchronized only guarantees that ony one thread can execute this section of code at a time.

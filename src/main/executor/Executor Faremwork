@@ -1,0 +1,123 @@
+
+________________________________________________________________________________________________________________________________________________________________________________________________________
+Future
+
+
+FutureTask  [class FutureTask implements Runnable, Future<V>, RunnableFuture<V>]
+===========
+1) It is base implementation of Future interface with methods to start and cancel a computation, to check if computation is done and to get the result. The result can only be retrieved when the
+computation has completed; the get methods will block if the computation has not yet completed.
+2) It implements Runnable interface as well and can be used to wrap a Callable or Runnable.
+    a) handy as schedule method in ScheduledThreadPoolExecutor takes Runnable only.
+    b) handy as can be submitted to and Executor for execution.
+3) In addition to serving as a standalone class, this class provides protected functionality that may be useful when creating customized task classes.
+
+
+Is there any difference in these two approaches?
+Approach One (Use FutureTask)
+FutureTask futureTask = new FutureTask<String>(callable); // wrapping a callable
+service.execute(task);
+// retrieve result using futureTask
+
+Approach Two (Using Future and submit method)
+Future future = service.submit(callable);
+future.get()
+
+They are actually doing same things if we check in class AbstractExecutorService
+--------------------------------------------------------------------------------
+protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
+    return new FutureTask<T>(runnable, value);
+}
+
+protected <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
+    return new FutureTask<T>(callable);     <---- 2) and this line
+}
+
+public Future<?> submit(Runnable task) {
+    // ...
+    RunnableFuture<Object> ftask = newTaskFor(task, null);
+    execute(ftask);
+    return ftask;
+}
+
+public <T> Future<T> submit(Runnable task, T result) {
+    // ...
+    RunnableFuture<T> ftask = newTaskFor(task, result);
+    execute(ftask);
+    return ftask;
+}
+
+public <T> Future<T> submit(Callable<T> task) {
+    // ...
+    RunnableFuture<T> ftask = newTaskFor(task);  <---- 1) note this line.
+    execute(ftask);
+    return ftask;
+}
+--------------------------------------------------------------------------------
+References:
+https://stackoverflow.com/questions/30976946/what-is-the-advantage-of-using-futuretask-over-callable
+https://stackoverflow.com/questions/46457678/garbage-collection-seems-to-shutdown-local-executor-and-cause-rejectedexecutione/46458130#46458130
+________________________________________________________________________________________________________________________________________________________________________________________________________
+
+Queue length and how to keep it bounded.
+----------------------------------------------------------------------
+ExecutorService executorService = Executors.newFixedThreadPool(10);
+----------------------------------------------------------------------
+
+In the above case it creates a ThreadPoolExecutor with:
+corePoolSize (the number of threads to keep in the pool, even if they are idle) - 10
+maximumPoolSize (the maximum number of threads to allow in the pool) - 10
+keepAliveTime (when the number of threads is greater than the core, this is the maximum time that excess idle threads will wait for new tasks before terminating) - 0
+unit (the time unit for the keepAliveTime argument) - TimeUnit.MILLISECONDS
+workQueue (the queue to use for holding tasks before they are executed.  This queue will hold only the Runnable tasks submitted by the execute method) - new LinkedBlockingQueue<Runnable>()
+
+If we configure too few threads, the queue will build up, consuming a lot of memory. Too many threads on the other hand will slow down the whole system due to excessive context switches - and lead to same symptoms. It's important to look at depth of queue
+and keep it bounded, so that overloaded thread pool simply rejects new tasks temporarily:
+-----------------------------------------------------------------------------------
+final BlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(100);
+executorService = new ThreadPoolExecutor(n, n, 0L, TimeUnit.MILLISECONDS, queue);
+-----------------------------------------------------------------------------------
+
+Code above is equivalent to Executors.newFixedThreadPool(n), however instead of default unlimited LinkedBlockingQueue we use ArrayBlockingQueue with fixed capacity of 100. This means that if 100 tasks are already queued (and n being executed), new task will
+be rejected with RejectedExecutionException. Also since queue is now available externally, we can periodically call size() and put it in logs/JMX/whatever monitoring mechanism you use.
+
+How about using a Synchronous Queue?
+SynchronousQueue is an interesting BlockingQueue that's not really a queue. It's not even a data structure per se. It's best explained as a queue with capacity of 0. Quoting JavaDoc: each insert operation must wait for a corresponding remove operation by
+another thread, and vice versa. A synchronous queue does not have any internal capacity, not even a capacity of one. You cannot peek at a synchronous queue because an element is only present when you try to remove it; you cannot insert an element (using any
+method) unless another thread is trying to remove it; you cannot iterate as there is nothing to iterate. Synchronous queues are similar to rendezvous channels used in CSP and Ada.
+--------------------------------------------------------------------------------------------------
+BlockingQueue<Runnable> queue = new SynchronousQueue<>();
+ExecutorService executorService = new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, queue);
+--------------------------------------------------------------------------------------------------
+We created a thread pool with two threads and a SynchronousQueue in front of it. Because SynchronousQueue is essentially a queue with 0 capacity, such ExecutorService will only accept new tasks if there is an idle thread available. If all threads are busy,
+new task will be rejected immediately and will never wait. This behavior might be desirable when processing in background must start immediately or be discarded.
+
+Explicit and safe shut down
+There are two ways to shutdown: either let all queued tasks to execute (shutdown()) or drop them (shutdownNow()). After submitting tasks we shutdown() so that it no longer accepts new tasks. Then we wait for some time for all tasks to finish. If some tasks
+are still pending the method awaitTermination will return false but pending tasks will continue processing. When we use shutdownNow() it is not graceful shutdown and returns a list of rejected  tasks.
+-----------------------------------------------------------------------------
+final List<Runnable> rejected = executorService.shutdownNow();
+log.debug("Rejected tasks: {}", rejected.size());
+-----------------------------------------------------------------------------
+
+
+
+
+
+
+ExecutionException vs InterruptedException
+https://stackoverflow.com/questions/2665569/in-what-cases-does-future-get-throw-executionexception-or-interruptedexception
+
+
+Handling InterruptedException
+https://stackoverflow.com/questions/3976344/handling-interruptedexception-in-java
+
+
+
+
+
+
+
+References:
+https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/FutureTask.html
+http://www.nurkiewicz.com/2014/11/executorservice-10-tips-and-tricks.html

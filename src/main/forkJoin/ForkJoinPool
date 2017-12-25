@@ -1,0 +1,28 @@
+ForkJoinPool (JDK 1.7)
+This is an ExecutorService for running ForkJoinTask. It differs from other kinds of ExecutorService mainly by virtue of employing work-stealing: all threads in the pool attempt to find and execute subtasks created by other active tasks (eventually blocking
+waiting for work if none exist). This enables efficient processing when most tasks spawn other subtasks (as do most ForkJoinTasks). When setting asyncMode to true in constructors, ForkJoinPools may also be appropriate for use with event-style tasks that are
+never joined.
+
+A ForkJoinPool is constructed with a given target parallelism level; by default, equal to the number of available processors. The pool attempts to maintain enough active (or available) threads by dynamically adding, suspending, or resuming internal worker
+threads, even if some tasks are stalled waiting to join others. However, no such adjustments are guaranteed in the face of blocked IO or other unmanaged synchronization. The nested ForkJoinPool.ManagedBlocker interface enables extension of the kinds of
+synchronization accommodated.
+
+As is the case with other ExecutorServices, there are three main task execution methods summarized in the following table. These are designed to be used by clients not already engaged in fork/join computations in the current pool. The main forms of these
+methods accept instances of ForkJoinTask, but overloaded forms also allow mixed execution of plain Runnable- or Callable- based activities as well. However, tasks that are already executing in a pool should normally NOT use these pool execution methods, but
+instead use the within-computation forms listed in the table.
+
++----------------------------------+-----------------------------------+--------------------------------------------------+
+|                                  | Call from non-fork/join clients   |    Call from within fork/join computations       |
+|----------------------------------|-----------------------------------|--------------------------------------------------|
+|  Arrange async execution         |  execute(ForkJoinTask)            |  ForkJoinTask.fork()                             |
+|----------------------------------|-----------------------------------|--------------------------------------------------|
+|  Await and obtain result         |  invoke(ForkJoinTask)             |  ForkJoinTask.invoke()                           |
+|----------------------------------|-----------------------------------|--------------------------------------------------|
+|  Arrange exec and obtain Future  |  submit(ForkJoinTask)             |  ForkJoinTask.fork() (ForkJoinTasks are Futures) |
++----------------------------------+-----------------------------------+--------------------------------------------------+
+
+Normally a single ForkJoinPool is used for all parallel task execution in a program or subsystem. Otherwise, it would outweigh the construction and bookkeeping overhead of creating a large set of threads. Because ForkJoinPool uses threads in daemon mode,
+there is typically no need to explicitly shutdown such a pool upon program exit.
+
+Refernces:
+https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ForkJoinPool.html
